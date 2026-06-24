@@ -1,0 +1,8 @@
+{
+  "appId": "com.revisioncoach.app",
+  "appName": "Revision Coach",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
