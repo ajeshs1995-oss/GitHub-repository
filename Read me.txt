@@ -1,0 +1,58 @@
+# Beginner's Guide: Uploading to GitHub & Getting Your APK
+
+Since you have created a GitHub account, you are ready to build your APK in the cloud! Because Windows hides folders starting with dots (like `.github`), dragging and dropping through the browser can miss important build files.
+
+To make this completely reliable, I created a push helper script called **`github_push.bat`** in your workspace root. It will handle installing Git, staging all hidden folders, committing, and uploading for you!
+
+---
+
+## Step 1: Create a GitHub Repository
+
+1. Open your web browser and go to [github.com](https://github.com/).
+2. Log in to your new account.
+3. In the top-right corner of the page, click the **`+`** icon (dropdown menu) and select **New repository**.
+4. Configure your repository:
+   - **Repository name**: Type `revision-coach`.
+   - **Public/Private**: Select **Private** (recommended to keep your code secure) or **Public**.
+   - Do **NOT** check "Add a README file", "Add .gitignore", or "Choose a license" (leave them empty).
+5. Click the green **Create repository** button.
+6. Once created, copy the repository URL. It will look like this:
+   `https://github.com/your-username/revision-coach.git`
+
+---
+
+## Step 2: Push Your Workspace Files (Automated Script)
+
+Now we will use the script in your workspace directory to upload everything automatically:
+
+1. Open your workspace directory:
+   `C:\Users\ASM\.gemini\antigravity\playground\shimmering-chromosphere\`
+2. Double-click the file named **`github_push.bat`**.
+3. **First-Time Running (Installs Git)**:
+   - The script will detect Git is missing and start installing it using the Windows Package Manager.
+   - You may see a Windows User Account Control window pop up asking for permission to install. Click **Yes**.
+   - Once the installation finishes, the script will ask you to **close the window and double-click `github_push.bat` again** (this refreshes your system PATH to recognize Git).
+4. **Second-Time Running (Uploads Files)**:
+   - Double-click **`github_push.bat`** again.
+   - It will automatically stage all your files (including hidden folders like `.github`).
+   - The script will prompt you: `Enter your GitHub Repository URL:`
+   - Right-click in the terminal window to paste your copied repository URL (e.g., `https://github.com/your-username/revision-coach.git`) and press **Enter**.
+5. **Sign in to GitHub**:
+   - A window will pop up asking you to authorize Git to access your account.
+   - Click **Sign in with your browser**, log in, and authorize it.
+   - The script will complete pushing all files to GitHub!
+
+---
+
+## Step 3: Trigger the Build & Download Your APK
+
+Once the files are pushed, the build process starts automatically on GitHub!
+
+1. At the top of your repository page, click the **Actions** tab.
+2. You will see a workflow running named **Build Android APK** (indicated by a yellow spinning circle).
+3. Click on the workflow name to open it.
+4. Wait about 2 to 3 minutes for the build to complete. The yellow circle will turn into a **green checkmark (✓)**.
+5. Click on the completed workflow run.
+6. Scroll down to the **Artifacts** section at the bottom.
+7. Click the **`Revision-Coach-APK`** link to download a zip file containing your compiled Android app!
+8. Unzip the file on your computer, transfer the `app-debug.apk` to your phone, and install it!

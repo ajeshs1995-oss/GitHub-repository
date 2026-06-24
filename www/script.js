@@ -2,18 +2,30 @@
 // 1. STATE & CONSTANTS
 // ==========================================
 const state = {
-    quizData: [],
-    uiConfig: {},
+    // API Output Data
+    sourceMetadata: {},
+    allQuestions: [],
+    
+    // Active Practice Session State
+    activeQuestions: [],
     currentIndex: 0,
-    results: [], // Array of { isCorrect: boolean, difficulty: string }
+    results: [], // Results for the *current* round: { isCorrect: boolean, difficulty: string }
     selectedOption: null, // String (e.g., 'A', 'B', etc.)
-    attachedFile: null // Object: { name, size, type, base64Data, textContent }
+    incorrectQuestions: [], // Array of question objects answered wrong in current round
+    
+    // Performance Baseline tracking
+    firstAttemptResults: null, // Copy of results array from the first attempt
+    
+    attachedFile: null, // Object: { name, size, type, base64Data, textContent }
+    uiConfig: {}
 };
 
 const screens = {
     setup: document.getElementById('setup-screen'),
     loading: document.getElementById('loading-screen'),
+    summary: document.getElementById('summary-screen'),
     quiz: document.getElementById('quiz-screen'),
+    retryDialog: document.getElementById('retry-dialog-screen'),
     results: document.getElementById('results-screen')
 };
 
@@ -273,12 +285,28 @@ generateBtn.addEventListener('click', async () => {
     const parts = [];
     
     let promptText = `
-    Analyze the following study material. Detect the language and use it for ALL output.
-    Generate unique MCQs. Tag difficulty (Easy/Medium/Hard).
-    Output strictly as JSON with "ui_config" (translating UI buttons) and "quiz_data" (question, options, correct_answer, difficulty, concept, memory_trick).
-    
-    The options MUST start with their respective letter identifier (e.g. "A. Option description" or "B. Option description") so the letters can be matched cleanly.
-    The "correct_answer" field must be the letter itself (e.g. "A", "B", "C", or "D").
+    Analyze the following study material carefully and output strictly a JSON object with:
+    1. "source_metadata": An object summarizing the uploaded document with:
+       - "type": Detect the type of material (e.g. PDF Document, Image Notes, Article, Lecture Slides, Code Snippet, etc.)
+       - "pages": Number of pages if visible or applicable (especially for PDFs), or length descriptor (e.g. "X paragraphs" or "N/A")
+       - "difficulty_of_learning": Overall conceptual depth of learning (Easy, Medium, Hard)
+       - "topics": An array of core topic titles identified in the study materials.
+    2. "ui_config": Standard UI button translation strings.
+    3. "quiz_data": An array of multiple choice questions (MCQs).
+       For each question, include:
+       - "question": The question text.
+       - "options": An array of 4 options. They MUST start with their letter identifier (e.g. "A. Option", "B. Option", etc.)
+       - "correct_answer": The letter itself (e.g. "A", "B", "C", or "D").
+       - "difficulty": Question specific difficulty (Easy, Medium, Hard).
+       - "concept": Explanation of the concept.
+       - "memory_trick": Mnemonic or trick to remember.
+       - "topic": The specific sub-topic this question covers.
+
+    CRITICAL RULES FOR QUESTION GENERATION:
+    - EXISTING QUESTIONS: If the study material already contains test questions, review questions, or sample MCQs, extract them verbatim! Preserve their original wording and correct options as closely as possible.
+    - INSTRUCTIONAL CONTENT: For study notes, explanations, or facts, generate unique, high-quality MCQs strictly derived from the material.
+    - NO HALLUCINATIONS: Do not introduce external facts, outside knowledge, or assumptions. All questions and correct options must be 100% true based ONLY on the provided text.
+    - QUESTION VOLUME: Generate as many questions as the material naturally supports to cover all important points. Do NOT restrict to 10 questions. Generate all possible questions that cover all the key facts in the material.
     `;
 
     if (notes) {
@@ -324,20 +352,19 @@ generateBtn.addEventListener('click', async () => {
             
             const quizData = JSON.parse(rawText);
             
-            state.quizData = quizData.quiz_data || [];
+            state.allQuestions = quizData.quiz_data || [];
+            state.sourceMetadata = quizData.source_metadata || {};
             state.uiConfig = quizData.ui_config || {};
-            state.currentIndex = 0;
-            state.results = [];
             
-            if (state.quizData.length === 0) {
+            if (state.allQuestions.length === 0) {
                 showScreen('setup');
                 showStatus('⚠️ Gemini analyzed your materials but could not generate questions. Try pasting more text or uploading a different file.', 'error');
                 return;
             }
             
-            // Start the quiz
-            renderQuestion();
-            showScreen('quiz');
+            // Trigger pre-quiz overview
+            renderSummaryScreen();
+            showScreen('summary');
             
         } else if (response.status === 400) {
             showScreen('setup');
@@ -354,7 +381,86 @@ generateBtn.addEventListener('click', async () => {
 });
 
 // ==========================================
-// 8. QUIZ RENDER & INTERACTIVE LOGIC
+// 8. PRE-QUIZ SUMMARY DISPLAY
+// ==========================================
+const statSourceType = document.getElementById('stat-source-type');
+const statSourcePages = document.getElementById('stat-source-pages');
+const statSourceDepth = document.getElementById('stat-source-depth');
+const statSourceTopics = document.getElementById('stat-source-topics');
+
+const statQuizTotal = document.getElementById('stat-quiz-total');
+const statQuizDiffMix = document.getElementById('stat-quiz-difficulty-mix');
+const statQuizTopicsMix = document.getElementById('stat-quiz-topics-mix');
+const startQuizBtn = document.getElementById('start-quiz-btn');
+
+function renderSummaryScreen() {
+    // Fill left card: Document details
+    statSourceType.textContent = state.sourceMetadata.type || 'Pasted Notes';
+    statSourcePages.textContent = state.sourceMetadata.pages || 'N/A';
+    statSourceDepth.textContent = state.sourceMetadata.difficulty_of_learning || 'Medium';
+    
+    // Topics Chips
+    statSourceTopics.innerHTML = '';
+    const topics = state.sourceMetadata.topics || [];
+    if (topics.length === 0) {
+        statSourceTopics.innerHTML = `<span class="topic-chip">General Concepts</span>`;
+    } else {
+        topics.forEach(t => {
+            const chip = document.createElement('span');
+            chip.className = 'topic-chip';
+            chip.textContent = t;
+            statSourceTopics.appendChild(chip);
+        });
+    }
+
+    // Fill right card: Quiz parameters
+    statQuizTotal.textContent = state.allQuestions.length;
+    
+    // Difficulty breakdown counts
+    const counts = { Easy: 0, Medium: 0, Hard: 0 };
+    state.allQuestions.forEach(q => {
+        const d = (q.difficulty || 'Medium').trim();
+        const norm = d.charAt(0).toUpperCase() + d.slice(1).toLowerCase();
+        if (counts.hasOwnProperty(norm)) counts[norm]++;
+        else counts.Medium++;
+    });
+    
+    statQuizDiffMix.innerHTML = `
+        <div class="stat-mix-item"><span style="color:var(--success);">Easy</span>: ${counts.Easy}</div>
+        <div class="stat-mix-item"><span style="color:var(--warning);">Medium</span>: ${counts.Medium}</div>
+        <div class="stat-mix-item"><span style="color:var(--error);">Hard</span>: ${counts.Hard}</div>
+    `;
+
+    // Topic question count breakdown
+    const topicCounts = {};
+    state.allQuestions.forEach(q => {
+        const t = q.topic || 'General Practice';
+        topicCounts[t] = (topicCounts[t] || 0) + 1;
+    });
+
+    statQuizTopicsMix.innerHTML = '';
+    Object.keys(topicCounts).forEach(topicName => {
+        const row = document.createElement('div');
+        row.className = 'stat-mix-item';
+        row.innerHTML = `<span style="color:var(--text-muted);">${topicName}</span>: ${topicCounts[topicName]} q.`;
+        statQuizTopicsMix.appendChild(row);
+    });
+}
+
+// Click to initiate quiz practice
+startQuizBtn.addEventListener('click', () => {
+    state.activeQuestions = [...state.allQuestions];
+    state.currentIndex = 0;
+    state.results = [];
+    state.incorrectQuestions = [];
+    state.firstAttemptResults = null; // Clear baseline
+    
+    renderQuestion();
+    showScreen('quiz');
+});
+
+// ==========================================
+// 9. QUIZ PRACTICE INTERACTIVE LOGIC
 // ==========================================
 const progressLabel = document.getElementById('progress-label');
 const difficultyBadge = document.getElementById('difficulty-badge');
@@ -373,10 +479,10 @@ const submitBtn = document.getElementById('submit-btn');
 const nextBtn = document.getElementById('next-btn');
 
 function renderQuestion() {
-    const question = state.quizData[state.currentIndex];
+    const question = state.activeQuestions[state.currentIndex];
     
     // Set Header Metadata
-    progressLabel.textContent = `Question ${state.currentIndex + 1} of ${state.quizData.length}`;
+    progressLabel.textContent = `Question ${state.currentIndex + 1} of ${state.activeQuestions.length}`;
     
     // Style difficulty badge
     const diff = (question.difficulty || 'Medium').trim();
@@ -384,7 +490,7 @@ function renderQuestion() {
     difficultyBadge.className = `difficulty-badge difficulty-${diff.toLowerCase()}`;
     
     // Update progress bar percentage
-    const pct = (state.currentIndex / state.quizData.length) * 100;
+    const pct = (state.currentIndex / state.activeQuestions.length) * 100;
     progressBar.style.width = `${pct}%`;
     
     // Set Question text
@@ -433,15 +539,12 @@ function renderQuestion() {
     submitBtn.style.display = 'block';
     submitBtn.disabled = true;
     nextBtn.style.display = 'none';
-    
-    // Enable/disable option card locks
-    optionsGrid.classList.remove('locked');
 }
 
 submitBtn.addEventListener('click', () => {
     if (!state.selectedOption) return;
     
-    const question = state.quizData[state.currentIndex];
+    const question = state.activeQuestions[state.currentIndex];
     const correctLetter = question.correct_answer.trim().toUpperCase();
     const isCorrect = (state.selectedOption === correctLetter);
     
@@ -450,6 +553,11 @@ submitBtn.addEventListener('click', () => {
         isCorrect: isCorrect,
         difficulty: question.difficulty || 'Medium'
     });
+    
+    // If incorrect, add to retry list
+    if (!isCorrect) {
+        state.incorrectQuestions.push(question);
+    }
     
     // Disable inputs
     document.querySelectorAll('.option-card').forEach(card => {
@@ -499,19 +607,63 @@ submitBtn.addEventListener('click', () => {
 
 nextBtn.addEventListener('click', () => {
     state.currentIndex++;
-    if (state.currentIndex < state.quizData.length) {
+    if (state.currentIndex < state.activeQuestions.length) {
         renderQuestion();
     } else {
-        finishQuiz();
+        completeRound();
     }
 });
 
 // ==========================================
-// 9. FINISH QUIZ & ACCURACY METRICS
+// 10. CHECKPOINT COMPLETE & RETRY FLOW
+// ==========================================
+const retryDialogMessage = document.getElementById('retry-dialog-message');
+const retryNoBtn = document.getElementById('retry-no-btn');
+const retryYesBtn = document.getElementById('retry-yes-btn');
+
+function completeRound() {
+    // Record baseline score on the very first round completion
+    if (state.firstAttemptResults === null) {
+        state.firstAttemptResults = [...state.results];
+    }
+    
+    // Check if there are wrongly answered questions to retry
+    if (state.incorrectQuestions.length > 0) {
+        const correct = state.results.filter(r => r.isCorrect).length;
+        const total = state.results.length;
+        
+        retryDialogMessage.innerHTML = `You answered <span style="color:var(--primary); font-weight:700;">${correct} out of ${total}</span> questions correctly.<br>You have <span style="color:var(--error); font-weight:700;">${state.incorrectQuestions.length}</span> incorrect answers remaining.`;
+        
+        showScreen('retryDialog');
+    } else {
+        // Mastered all questions, proceed to final performance score
+        finishQuiz();
+    }
+}
+
+// Yes - Practice wrong ones
+retryYesBtn.addEventListener('click', () => {
+    state.activeQuestions = [...state.incorrectQuestions];
+    state.incorrectQuestions = [];
+    state.currentIndex = 0;
+    state.results = [];
+    
+    renderQuestion();
+    showScreen('quiz');
+});
+
+// No - Skip retry, show stats
+retryNoBtn.addEventListener('click', () => {
+    finishQuiz();
+});
+
+// ==========================================
+// 11. RESULTS SCREEN & DIAGNOSTIC STATS
 // ==========================================
 const scoreCircleProgress = document.getElementById('score-circle-progress');
 const scorePercentage = document.getElementById('score-percentage');
 const scoreRatio = document.getElementById('score-ratio');
+const resultsSubtitle = document.getElementById('results-subtitle');
 
 const statEasy = document.getElementById('stat-easy');
 const statMedium = document.getElementById('stat-medium');
@@ -521,28 +673,45 @@ const retakeBtn = document.getElementById('retake-btn');
 const restartBtn = document.getElementById('restart-btn');
 
 function finishQuiz() {
-    const total = state.results.length;
-    const correct = state.results.filter(r => r.isCorrect).length;
-    const accuracy = total > 0 ? (correct / total) * 100 : 0;
+    const baselineTotal = state.firstAttemptResults.length;
+    const baselineCorrect = state.firstAttemptResults.filter(r => r.isCorrect).length;
+    const baselineAccuracy = baselineTotal > 0 ? (baselineCorrect / baselineTotal) * 100 : 0;
     
-    // Render Circular Progress Ring (circumference: 440px)
-    const strokeOffset = 440 - (440 * accuracy) / 100;
+    // Render Circular Progress Ring with first-attempt score (circumference: 440px)
+    const strokeOffset = 440 - (440 * baselineAccuracy) / 100;
     scoreCircleProgress.style.strokeDashoffset = strokeOffset;
     
-    scorePercentage.textContent = `${accuracy.toFixed(0)}%`;
-    scoreRatio.textContent = `${correct}/${total}`;
+    scorePercentage.textContent = `${baselineAccuracy.toFixed(0)}%`;
+    scoreRatio.textContent = `${baselineCorrect}/${baselineTotal}`;
     
-    // Calculate stats by difficulty
+    // Subtitle progress description
+    let subtitleHTML = `Initial Baseline Score: <strong>${baselineCorrect}/${baselineTotal}</strong>`;
+    
+    if (baselineCorrect < baselineTotal) {
+        if (state.incorrectQuestions.length === 0) {
+            subtitleHTML += ` <span style="color:var(--success);">• Final Mastery achieved: Completed all questions with 100% review!</span>`;
+        } else {
+            const masteredCount = baselineTotal - state.incorrectQuestions.length;
+            subtitleHTML += ` • Mastered so far: <strong>${masteredCount}/${baselineTotal}</strong> (${state.incorrectQuestions.length} remaining)`;
+        }
+    } else {
+        subtitleHTML += ` <span style="color:var(--success);">• Flawless Run!</span>`;
+    }
+    resultsSubtitle.innerHTML = subtitleHTML;
+    
+    // Compute stats by difficulty using BASELINE results for diagnostic accuracy
     const diffStats = {
         Easy: { correct: 0, total: 0 },
         Medium: { correct: 0, total: 0 },
         Hard: { correct: 0, total: 0 }
     };
     
-    state.results.forEach(r => {
-        const d = r.difficulty.trim();
-        // Normalize casing
+    state.firstAttemptResults.forEach((r, idx) => {
+        // Safe mapping
+        const q = state.allQuestions[idx] || {};
+        const d = (q.difficulty || 'Medium').trim();
         const normalized = d.charAt(0).toUpperCase() + d.slice(1).toLowerCase();
+        
         if (diffStats[normalized]) {
             diffStats[normalized].total++;
             if (r.isCorrect) diffStats[normalized].correct++;
@@ -562,8 +731,8 @@ function finishQuiz() {
     
     showScreen('results');
     
-    // Run Celebration!
-    if (accuracy >= 60) {
+    // Run Celebration! (Confetti fires for good initial baseline score or total mastery completion)
+    if (baselineAccuracy >= 60 || state.incorrectQuestions.length === 0) {
         startConfetti();
     }
 }
@@ -571,6 +740,10 @@ function finishQuiz() {
 retakeBtn.addEventListener('click', () => {
     state.currentIndex = 0;
     state.results = [];
+    state.incorrectQuestions = [];
+    state.firstAttemptResults = null; // Reset baseline
+    state.activeQuestions = [...state.allQuestions]; // Reload all
+    
     renderQuestion();
     showScreen('quiz');
 });
@@ -585,7 +758,7 @@ restartBtn.addEventListener('click', () => {
 });
 
 // ==========================================
-// 10. CELEBRATION EFFECTS (Confetti Canvas)
+// 12. CELEBRATION EFFECTS (Confetti Canvas)
 // ==========================================
 const canvas = document.getElementById('confetti-canvas');
 const ctx = canvas.getContext('2d');
@@ -664,7 +837,7 @@ function startConfetti() {
 }
 
 // ==========================================
-// 11. APP BOOTSTRAP
+// 13. APP BOOTSTRAP
 // ==========================================
 initTheme();
 initApiKey();

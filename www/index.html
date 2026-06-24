@@ -139,7 +139,76 @@
             </div>
         </section>
 
-        <!-- 3. QUIZ SCREEN -->
+        <!-- 3. PRE-QUIZ SUMMARY SCREEN -->
+        <section id="summary-screen" class="screen">
+            <h2>Study Material Breakdown</h2>
+            
+            <div class="summary-grid">
+                <!-- Left Card: Source Stats -->
+                <div class="summary-card">
+                    <div class="summary-card-header">
+                        <span class="summary-card-icon">📁</span>
+                        <h3>Material Statistics</h3>
+                    </div>
+                    <ul class="summary-details-list">
+                        <li>
+                            <span class="detail-label">Source Type:</span>
+                            <span id="stat-source-type" class="detail-val">Calculating...</span>
+                        </li>
+                        <li>
+                            <span class="detail-label">Pages / Length:</span>
+                            <span id="stat-source-pages" class="detail-val">N/A</span>
+                        </li>
+                        <li>
+                            <span class="detail-label">Conceptual Depth:</span>
+                            <span id="stat-source-depth" class="detail-val">Calculating...</span>
+                        </li>
+                    </ul>
+                    <div class="topic-tags-container">
+                        <span class="detail-label" style="display: block; margin-bottom: 8px;">Core Topics Covered:</span>
+                        <div id="stat-source-topics" class="topic-chips">
+                            <!-- Populated in JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Card: Quiz Stats -->
+                <div class="summary-card">
+                    <div class="summary-card-header">
+                        <span class="summary-card-icon">📊</span>
+                        <h3>Quiz Parameters</h3>
+                    </div>
+                    <ul class="summary-details-list">
+                        <li>
+                            <span class="detail-label">Total Questions:</span>
+                            <span id="stat-quiz-total" class="detail-val">0</span>
+                        </li>
+                        <li>
+                            <span class="detail-label">Difficulty Mix:</span>
+                            <div id="stat-quiz-difficulty-mix" class="stat-mix-grid">
+                                <!-- Populated in JS -->
+                            </div>
+                        </li>
+                        <li>
+                            <span class="detail-label">Topic Coverage:</span>
+                            <div id="stat-quiz-topics-mix" class="stat-mix-list">
+                                <!-- Populated in JS -->
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <button id="start-quiz-btn" class="btn-primary">
+                <span>Start Practice Quiz</span>
+                <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" height="16" width="16" xmlns="http://www.w3.org/2000/svg">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </button>
+        </section>
+
+        <!-- 4. QUIZ SCREEN -->
         <section id="quiz-screen" class="screen">
             <!-- Header bar for metadata -->
             <div class="quiz-header">
@@ -197,7 +266,27 @@
             </footer>
         </section>
 
-        <!-- 4. RESULTS SCREEN -->
+        <!-- 5. RETRY DIALOG SCREEN -->
+        <section id="retry-dialog-screen" class="screen">
+            <div class="results-card">
+                <div class="retry-icon-wrapper">🔄</div>
+                <h2>Practice Session Complete!</h2>
+                <p id="retry-dialog-message" class="retry-message">You answered 0 out of 0 questions correctly.</p>
+                <p class="retry-submessage">Would you like to restart immediately with only the wrongly answered questions to reinforce your learning, or view your cumulative performance?</p>
+                
+                <div class="results-actions" style="margin-top: 30px;">
+                    <button id="retry-no-btn" class="btn-secondary">No, View Statistics</button>
+                    <button id="retry-yes-btn" class="btn-primary">
+                        <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" height="16" width="16" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                        </svg>
+                        <span>Retry Wrong Answers</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. RESULTS SCREEN -->
         <section id="results-screen" class="screen">
             <div class="results-card">
                 <h2>Quiz Performance Checkpoint</h2>
@@ -219,6 +308,9 @@
                         <span id="score-ratio" class="score-ratio">0/0</span>
                     </div>
                 </div>
+
+                <!-- Score breakdown subtitles (especially useful for retries) -->
+                <p id="results-subtitle" style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px; font-weight: 500;"></p>
 
                 <!-- Performance Grid Stats -->
                 <div class="results-stats-grid">

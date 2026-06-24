@@ -559,6 +559,139 @@ textarea.input-ctrl {
   color: var(--text-muted);
 }
 
+/* Pre-Quiz Summary Screen */
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.summary-card {
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  transition: background-color var(--transition-normal);
+}
+
+.summary-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+}
+
+.summary-card-icon {
+  font-size: 20px;
+}
+
+.summary-card h3 {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.summary-details-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summary-details-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-size: 13.5px;
+  gap: 10px;
+}
+
+.detail-label {
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.detail-val {
+  font-weight: 600;
+  text-align: right;
+  word-break: break-all;
+}
+
+.topic-tags-container {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.topic-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.topic-chip {
+  font-size: 10.5px;
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-color);
+  padding: 4px 8px;
+  border-radius: 99px;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.stat-mix-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: right;
+}
+
+.stat-mix-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: right;
+  max-height: 120px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.stat-mix-item {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* Retry Screen Icon and Layout */
+.retry-icon-wrapper {
+  font-size: 48px;
+  margin-bottom: 20px;
+  display: inline-block;
+  animation: spin-slow 15s infinite linear;
+}
+
+.retry-message {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.retry-submessage {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
 /* Quiz Screen Details */
 .quiz-header {
   display: flex;
@@ -915,6 +1048,10 @@ textarea.input-ctrl {
   }
   .brand {
     font-size: 20px;
+  }
+  .summary-grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
   }
   .results-stats-grid {
     grid-template-columns: 1fr;
