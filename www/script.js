@@ -16,7 +16,7 @@ const state = {
     // Performance Baseline tracking
     firstAttemptResults: null, // Copy of results array from the first attempt
     
-    attachedFile: null, // Object: { name, size, type, base64Data, textContent }
+    attachedFiles: [], // Array of file objects: { id, name, size, type, base64Data, textContent, icon }
     uiConfig: {}
 };
 
@@ -127,15 +127,11 @@ function hideStatus() {
 }
 
 // ==========================================
-// 6. MULTIMODAL FILE UPLOAD CONTROLS
+// 6. MULTIMODAL MULTI-FILE UPLOAD CONTROLS
 // ==========================================
 const uploadZone = document.getElementById('upload-zone');
 const fileSelector = document.getElementById('file-selector');
-const fileDrawer = document.getElementById('file-drawer');
-const fileIcon = document.getElementById('file-icon');
-const fileName = document.getElementById('file-name');
-const fileSize = document.getElementById('file-size');
-const fileRemoveBtn = document.getElementById('file-remove-btn');
+const fileListContainer = document.getElementById('file-list-container');
 
 // Size formatting helper
 function formatBytes(bytes) {
@@ -150,7 +146,7 @@ function formatBytes(bytes) {
 uploadZone.addEventListener('click', () => fileSelector.click());
 
 fileSelector.addEventListener('change', (e) => {
-    handleFileSelection(e.target.files[0]);
+    handleFilesSelection(e.target.files);
 });
 
 // Drag over elements
@@ -167,78 +163,113 @@ uploadZone.addEventListener('dragover', (e) => {
 });
 
 uploadZone.addEventListener('drop', (e) => {
-    handleFileSelection(e.dataTransfer.files[0]);
+    handleFilesSelection(e.dataTransfer.files);
 });
 
-fileRemoveBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    fileSelector.value = '';
-    fileDrawer.style.display = 'none';
-    state.attachedFile = null;
-});
-
-function handleFileSelection(file) {
-    if (!file) return;
+function handleFilesSelection(files) {
+    if (!files || files.length === 0) return;
     hideStatus();
 
-    // 15MB upload sanity check
-    if (file.size > 15 * 1024 * 1024) {
-        showStatus('⚠️ File size exceeds the 15MB limit. Please upload a smaller file.', 'error');
-        return;
-    }
+    Array.from(files).forEach(file => {
+        // Prevent duplicate files in stack
+        if (state.attachedFiles.some(f => f.name === file.name && f.size === file.size)) {
+            return;
+        }
 
-    const type = file.type;
-    const isText = type === 'text/plain' || type === 'text/markdown' || file.name.endsWith('.txt') || file.name.endsWith('.md');
-    const isPDF = type === 'application/pdf';
-    const isImage = type.startsWith('image/');
+        // 15MB upload sanity check
+        if (file.size > 15 * 1024 * 1024) {
+            showStatus(`⚠️ File "${file.name}" exceeds the 15MB limit. Please upload smaller files.`, 'error');
+            return;
+        }
 
-    if (!isText && !isPDF && !isImage) {
-        showStatus('⚠️ Unsupported file format. Please upload an Image, PDF, TXT, or Markdown document.', 'error');
-        return;
-    }
+        const type = file.type;
+        const isText = type === 'text/plain' || type === 'text/markdown' || file.name.endsWith('.txt') || file.name.endsWith('.md');
+        const isPDF = type === 'application/pdf';
+        const isImage = type.startsWith('image/');
 
-    let itemIcon = '📄';
-    if (isImage) itemIcon = '🖼️';
-    if (isPDF) itemIcon = '📕';
+        if (!isText && !isPDF && !isImage) {
+            showStatus(`⚠️ File "${file.name}" has an unsupported format. Please upload Images, PDFs, TXT, or Markdown documents.`, 'error');
+            return;
+        }
 
-    const reader = new FileReader();
+        let itemIcon = '📄';
+        if (isImage) itemIcon = '🖼️';
+        if (isPDF) itemIcon = '📕';
 
-    reader.onload = (e) => {
-        state.attachedFile = {
-            name: file.name,
-            size: file.size,
-            type: isText ? 'text' : type,
-            base64Data: null,
-            textContent: null
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            const attachedFile = {
+                id: Date.now() + Math.random().toString(36).substr(2, 9),
+                name: file.name,
+                size: file.size,
+                type: isText ? 'text' : type,
+                base64Data: null,
+                textContent: null,
+                icon: itemIcon
+            };
+
+            if (isText) {
+                attachedFile.textContent = e.target.result;
+            } else {
+                // Strip data URL scheme to get raw base64 data
+                const dataUrl = e.target.result;
+                const base64Index = dataUrl.indexOf(';base64,');
+                if (base64Index !== -1) {
+                    attachedFile.base64Data = dataUrl.substring(base64Index + 8);
+                }
+            }
+
+            state.attachedFiles.push(attachedFile);
+            renderFilesList();
+        };
+
+        reader.onerror = () => {
+            showStatus(`⚠️ Failed to read the file "${file.name}". Please try again.`, 'error');
         };
 
         if (isText) {
-            state.attachedFile.textContent = e.target.result;
+            reader.readAsText(file);
         } else {
-            // Strip data URL scheme (e.g. "data:image/png;base64,") to get raw base64 data
-            const dataUrl = e.target.result;
-            const base64Index = dataUrl.indexOf(';base64,');
-            if (base64Index !== -1) {
-                state.attachedFile.base64Data = dataUrl.substring(base64Index + 8);
-            }
+            reader.readAsDataURL(file);
         }
+    });
+}
 
-        // Show attachment status pill
-        fileIcon.textContent = itemIcon;
-        fileName.textContent = file.name;
-        fileSize.textContent = formatBytes(file.size);
-        fileDrawer.style.display = 'flex';
-    };
-
-    reader.onerror = () => {
-        showStatus('⚠️ Failed to read the selected file. Please try again.', 'error');
-    };
-
-    if (isText) {
-        reader.readAsText(file);
-    } else {
-        reader.readAsDataURL(file);
-    }
+function renderFilesList() {
+    fileListContainer.innerHTML = '';
+    
+    state.attachedFiles.forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        
+        item.innerHTML = `
+            <div class="file-info">
+                <span class="file-icon">${file.icon}</span>
+                <div class="file-details">
+                    <span class="file-name" title="${file.name}">${file.name}</span>
+                    <span class="file-size">${formatBytes(file.size)}</span>
+                </div>
+            </div>
+            <button class="file-remove-btn" type="button" title="Remove attachment" aria-label="Remove attachment">
+                <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" height="16" width="16" xmlns="http://www.w3.org/2000/svg">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+            </button>
+        `;
+        
+        // Remove item from state and UI list
+        item.querySelector('.file-remove-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            state.attachedFiles = state.attachedFiles.filter(f => f.id !== file.id);
+            renderFilesList();
+        });
+        
+        fileListContainer.appendChild(item);
+    });
 }
 
 // ==========================================
@@ -256,8 +287,8 @@ generateBtn.addEventListener('click', async () => {
         showStatus('⚠️ Please enter your Gemini API Key.', 'error');
         return;
     }
-    if (!notes && !state.attachedFile) {
-        showStatus('⚠️ Please enter study notes OR upload a document/image to generate the quiz.', 'error');
+    if (!notes && state.attachedFiles.length === 0) {
+        showStatus('⚠️ Please enter study notes OR upload one or more files to generate the quiz.', 'error');
         return;
     }
 
@@ -270,10 +301,10 @@ generateBtn.addEventListener('click', async () => {
 
     // Dynamic loading subtext
     const loadingSubtext = document.getElementById('loading-subtext');
-    if (state.attachedFile) {
-        loadingSubtext.textContent = `Analyzing file "${state.attachedFile.name}" and parsing study concepts...`;
+    if (state.attachedFiles.length > 0) {
+        loadingSubtext.textContent = `Analyzing ${state.attachedFiles.length} study files and parsing core concepts...`;
     } else {
-        loadingSubtext.textContent = 'Structuring notes facts into visual challenges...';
+        loadingSubtext.textContent = 'Structuring notes facts into practice challenges...';
     }
 
     // Transition to loading view
@@ -285,10 +316,12 @@ generateBtn.addEventListener('click', async () => {
     const parts = [];
     
     let promptText = `
+    Identify the primary language used in the uploaded study materials. You MUST generate the ENTIRE JSON response (questions, options, correct_answers, concepts, memory_tricks, topics, and ui_config translation buttons) in that EXACT same detected language. Do not mix languages (e.g. keep all options, concepts, and labels fully localized).
+    
     Analyze the following study material carefully and output strictly a JSON object with:
-    1. "source_metadata": An object summarizing the uploaded document with:
-       - "type": Detect the type of material (e.g. PDF Document, Image Notes, Article, Lecture Slides, Code Snippet, etc.)
-       - "pages": Number of pages if visible or applicable (especially for PDFs), or length descriptor (e.g. "X paragraphs" or "N/A")
+    1. "source_metadata": An object summarizing the uploaded documents with:
+       - "type": Detect the type of materials (e.g. PDF Documents, Image Notes, Code Snippets, Mixed Study Guide, etc.)
+       - "pages": Total pages or length description (e.g. "X pages across Y files")
        - "difficulty_of_learning": Overall conceptual depth of learning (Easy, Medium, Hard)
        - "topics": An array of core topic titles identified in the study materials.
     2. "ui_config": Standard UI button translation strings.
@@ -303,31 +336,36 @@ generateBtn.addEventListener('click', async () => {
        - "topic": The specific sub-topic this question covers.
 
     CRITICAL RULES FOR QUESTION GENERATION:
-    - EXISTING QUESTIONS: If the study material already contains test questions, review questions, or sample MCQs, extract them verbatim! Preserve their original wording and correct options as closely as possible.
+    - LANGUAGE MATCHING: Perform all detection, reasoning, and outputs in the detected language of the study materials. If the materials are in Spanish, all fields must be in Spanish. If French, all fields in French, etc.
+    - EXISTING QUESTIONS: If the study materials already contain test questions, review questions, or sample MCQs, extract them verbatim! Preserve their original wording and correct options as closely as possible.
     - INSTRUCTIONAL CONTENT: For study notes, explanations, or facts, generate unique, high-quality MCQs strictly derived from the material.
-    - NO HALLUCINATIONS: Do not introduce external facts, outside knowledge, or assumptions. All questions and correct options must be 100% true based ONLY on the provided text.
-    - QUESTION VOLUME: Generate as many questions as the material naturally supports to cover all important points. Do NOT restrict to 10 questions. Generate all possible questions that cover all the key facts in the material.
+    - NO HALLUCINATIONS: Do not introduce external facts, outside knowledge, or assumptions. All questions and correct options must be 100% true based ONLY on the provided texts.
+    - QUESTION VOLUME: Generate as many questions as the materials naturally support to cover all important points. Do NOT restrict to 10 questions. Generate all possible questions that cover all the key facts in the materials.
     `;
 
     if (notes) {
         promptText += `\n\nPasted Study Notes:\n${notes}`;
     }
 
-    if (state.attachedFile && state.attachedFile.type === 'text') {
-        promptText += `\n\nAttached Study Document Contents:\n${state.attachedFile.textContent}`;
-    }
+    state.attachedFiles.forEach((file, index) => {
+        if (file.type === 'text') {
+            promptText += `\n\nAttached Study File [${index + 1}] (${file.name}) Contents:\n${file.textContent}`;
+        }
+    });
 
     parts.push({ text: promptText });
 
-    // Append binary file (image or PDF) as base64 inlineData
-    if (state.attachedFile && state.attachedFile.type !== 'text') {
-        parts.push({
-            inlineData: {
-                mimeType: state.attachedFile.type,
-                data: state.attachedFile.base64Data
-            }
-        });
-    }
+    // Append binary files (images or PDFs) as base64 inlineData
+    state.attachedFiles.forEach(file => {
+        if (file.type !== 'text') {
+            parts.push({
+                inlineData: {
+                    mimeType: file.type,
+                    data: file.base64Data
+                }
+            });
+        }
+    });
 
     const payload = {
         contents: [{ parts: parts }],
@@ -358,7 +396,7 @@ generateBtn.addEventListener('click', async () => {
             
             if (state.allQuestions.length === 0) {
                 showScreen('setup');
-                showStatus('⚠️ Gemini analyzed your materials but could not generate questions. Try pasting more text or uploading a different file.', 'error');
+                showStatus('⚠️ Gemini analyzed your materials but could not generate questions. Try pasting more text or uploading different files.', 'error');
                 return;
             }
             
@@ -632,6 +670,10 @@ function completeRound() {
         const correct = state.results.filter(r => r.isCorrect).length;
         const total = state.results.length;
         
+        // Use standard labels if translations not fetched yet
+        const textCorrect = state.uiConfig.msg_correct || 'correct';
+        const textIncorrect = state.uiConfig.msg_incorrect || 'incorrect';
+        
         retryDialogMessage.innerHTML = `You answered <span style="color:var(--primary); font-weight:700;">${correct} out of ${total}</span> questions correctly.<br>You have <span style="color:var(--error); font-weight:700;">${state.incorrectQuestions.length}</span> incorrect answers remaining.`;
         
         showScreen('retryDialog');
@@ -751,9 +793,8 @@ retakeBtn.addEventListener('click', () => {
 restartBtn.addEventListener('click', () => {
     // Reset inputs, but keep API Key input intact
     notesInput.value = '';
-    fileSelector.value = '';
-    fileDrawer.style.display = 'none';
-    state.attachedFile = null;
+    fileListContainer.innerHTML = '';
+    state.attachedFiles = [];
     showScreen('setup');
 });
 

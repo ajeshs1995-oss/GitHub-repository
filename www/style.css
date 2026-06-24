@@ -367,8 +367,18 @@ textarea.input-ctrl {
   color: var(--text-muted);
 }
 
-/* File Info Drawer/Badge */
-.file-drawer {
+/* File Info Drawer/List for Multiple Files */
+.file-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.file-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -376,11 +386,10 @@ textarea.input-ctrl {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   padding: 10px 16px;
-  margin-bottom: 24px;
   animation: slide-down var(--transition-fast) forwards;
 }
 
-[data-theme="light"] .file-drawer {
+[data-theme="light"] .file-item {
   background: rgba(0, 0, 0, 0.02);
 }
 
