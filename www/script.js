@@ -166,20 +166,95 @@ uploadZone.addEventListener('drop', (e) => {
     handleFilesSelection(e.dataTransfer.files);
 });
 
-function handleFilesSelection(files) {
+function compressImage(file) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(img.src);
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            const maxDim = 1200;
+            if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                    height = Math.round((height * maxDim) / width);
+                    width = maxDim;
+                } else {
+                    width = Math.round((width * maxDim) / height);
+                    height = maxDim;
+                }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            const base64Index = dataUrl.indexOf(';base64,');
+            const base64Data = base64Index !== -1 ? dataUrl.substring(base64Index + 8) : '';
+            const binaryLength = Math.round((base64Data.length * 3) / 4);
+            resolve({
+                base64Data: base64Data,
+                size: binaryLength,
+                dataUrl: dataUrl
+            });
+        };
+        img.onerror = () => {
+            resolve(null);
+        };
+    });
+}
+
+function readOriginalFile(file, isText, type, itemIcon) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const attachedFile = {
+            id: Date.now() + Math.random().toString(36).substr(2, 9),
+            name: file.name,
+            size: file.size,
+            type: isText ? 'text' : type,
+            base64Data: null,
+            textContent: null,
+            icon: itemIcon
+        };
+
+        if (isText) {
+            attachedFile.textContent = e.target.result;
+        } else {
+            const dataUrl = e.target.result;
+            const base64Index = dataUrl.indexOf(';base64,');
+            if (base64Index !== -1) {
+                attachedFile.base64Data = dataUrl.substring(base64Index + 8);
+            }
+        }
+
+        state.attachedFiles.push(attachedFile);
+        renderFilesList();
+    };
+
+    reader.onerror = () => {
+        showStatus(`⚠️ Failed to read the file "${file.name}". Please try again.`, 'error');
+    };
+
+    if (isText) {
+        reader.readAsText(file);
+    } else {
+        reader.readAsDataURL(file);
+    }
+}
+
+async function handleFilesSelection(files) {
     if (!files || files.length === 0) return;
     hideStatus();
 
-    Array.from(files).forEach(file => {
-        // Prevent duplicate files in stack
+    for (const file of Array.from(files)) {
         if (state.attachedFiles.some(f => f.name === file.name && f.size === file.size)) {
-            return;
+            continue;
         }
 
-        // 15MB upload sanity check
         if (file.size > 15 * 1024 * 1024) {
             showStatus(`⚠️ File "${file.name}" exceeds the 15MB limit. Please upload smaller files.`, 'error');
-            return;
+            continue;
         }
 
         const type = file.type;
@@ -189,51 +264,32 @@ function handleFilesSelection(files) {
 
         if (!isText && !isPDF && !isImage) {
             showStatus(`⚠️ File "${file.name}" has an unsupported format. Please upload Images, PDFs, TXT, or Markdown documents.`, 'error');
-            return;
+            continue;
         }
 
         let itemIcon = '📄';
         if (isImage) itemIcon = '🖼️';
         if (isPDF) itemIcon = '📕';
 
-        const reader = new FileReader();
-
-        reader.onload = (e) => {
-            const attachedFile = {
-                id: Date.now() + Math.random().toString(36).substr(2, 9),
-                name: file.name,
-                size: file.size,
-                type: isText ? 'text' : type,
-                base64Data: null,
-                textContent: null,
-                icon: itemIcon
-            };
-
-            if (isText) {
-                attachedFile.textContent = e.target.result;
-            } else {
-                // Strip data URL scheme to get raw base64 data
-                const dataUrl = e.target.result;
-                const base64Index = dataUrl.indexOf(';base64,');
-                if (base64Index !== -1) {
-                    attachedFile.base64Data = dataUrl.substring(base64Index + 8);
-                }
+        if (isImage) {
+            const compressed = await compressImage(file);
+            if (compressed) {
+                state.attachedFiles.push({
+                    id: Date.now() + Math.random().toString(36).substr(2, 9),
+                    name: file.name,
+                    size: compressed.size,
+                    type: 'image/jpeg',
+                    base64Data: compressed.base64Data,
+                    textContent: null,
+                    icon: itemIcon
+                });
+                renderFilesList();
+                continue;
             }
-
-            state.attachedFiles.push(attachedFile);
-            renderFilesList();
-        };
-
-        reader.onerror = () => {
-            showStatus(`⚠️ Failed to read the file "${file.name}". Please try again.`, 'error');
-        };
-
-        if (isText) {
-            reader.readAsText(file);
-        } else {
-            reader.readAsDataURL(file);
         }
-    });
+
+        readOriginalFile(file, isText, type, itemIcon);
+    }
 }
 
 function renderFilesList() {
@@ -432,12 +488,10 @@ const statQuizTopicsMix = document.getElementById('stat-quiz-topics-mix');
 const startQuizBtn = document.getElementById('start-quiz-btn');
 
 function renderSummaryScreen() {
-    // Fill left card: Document details
     statSourceType.textContent = state.sourceMetadata.type || 'Pasted Notes';
     statSourcePages.textContent = state.sourceMetadata.pages || 'N/A';
     statSourceDepth.textContent = state.sourceMetadata.difficulty_of_learning || 'Medium';
     
-    // Topics Chips
     statSourceTopics.innerHTML = '';
     const topics = state.sourceMetadata.topics || [];
     if (topics.length === 0) {
@@ -451,10 +505,8 @@ function renderSummaryScreen() {
         });
     }
 
-    // Fill right card: Quiz parameters
     statQuizTotal.textContent = state.allQuestions.length;
     
-    // Difficulty breakdown counts
     const counts = { Easy: 0, Medium: 0, Hard: 0 };
     state.allQuestions.forEach(q => {
         const d = (q.difficulty || 'Medium').trim();
@@ -469,7 +521,6 @@ function renderSummaryScreen() {
         <div class="stat-mix-item"><span style="color:var(--error);">Hard</span>: ${counts.Hard}</div>
     `;
 
-    // Topic question count breakdown
     const topicCounts = {};
     state.allQuestions.forEach(q => {
         const t = q.topic || 'General Practice';
@@ -493,6 +544,7 @@ startQuizBtn.addEventListener('click', () => {
     state.incorrectQuestions = [];
     state.firstAttemptResults = null; // Clear baseline
     
+    saveSession();
     renderQuestion();
     showScreen('quiz');
 });
@@ -516,35 +568,255 @@ const memoryText = document.getElementById('memory-text');
 const submitBtn = document.getElementById('submit-btn');
 const nextBtn = document.getElementById('next-btn');
 
-function renderQuestion() {
+// --- FLASHCARD STATE & ACTIONS ---
+let activeMode = 'mcq'; // 'mcq' or 'flashcard'
+
+const modeMcqBtn = document.getElementById('mode-mcq');
+const modeFlashcardBtn = document.getElementById('mode-flashcard');
+const flashcardView = document.getElementById('flashcard-view');
+
+// Dynamic injection of Flashcard grading action buttons in the footer
+let fcActions = document.getElementById('flashcard-actions');
+if (!fcActions) {
+    fcActions = document.createElement('div');
+    fcActions.id = 'flashcard-actions';
+    fcActions.style.display = 'none';
+    fcActions.style.width = '100%';
+    fcActions.style.gap = '12px';
+    fcActions.style.marginTop = '0px';
+    fcActions.innerHTML = `
+        <button id="fc-incorrect-btn" class="btn-secondary" style="flex: 1; border-color: var(--error); color: #FFA3A3;">❌ Incorrect</button>
+        <button id="fc-correct-btn" class="btn-primary" style="flex: 1; background: var(--success); box-shadow: 0 4px 15px var(--success-glow); border: none;">✔️ Correct</button>
+    `;
+    document.querySelector('.quiz-footer').appendChild(fcActions);
+}
+
+const fcIncorrectBtn = document.getElementById('fc-incorrect-btn');
+const fcCorrectBtn = document.getElementById('fc-correct-btn');
+
+modeMcqBtn.addEventListener('click', () => setStudyMode('mcq'));
+modeFlashcardBtn.addEventListener('click', () => setStudyMode('flashcard'));
+
+function setStudyMode(mode) {
+    activeMode = mode;
+    stopSpeech();
+    
+    if (mode === 'mcq') {
+        modeMcqBtn.classList.add('active');
+        modeFlashcardBtn.classList.remove('active');
+        optionsGrid.style.display = 'grid';
+        flashcardView.style.display = 'none';
+        
+        fcActions.style.display = 'none';
+        
+        const isAnswered = state.results.length > state.currentIndex;
+        if (isAnswered) {
+            submitBtn.style.display = 'none';
+            nextBtn.style.display = 'block';
+            feedbackContainer.style.display = 'block';
+        } else {
+            submitBtn.style.display = 'block';
+            nextBtn.style.display = 'none';
+            feedbackContainer.style.display = 'none';
+        }
+    } else {
+        modeMcqBtn.classList.remove('active');
+        modeFlashcardBtn.classList.add('active');
+        optionsGrid.style.display = 'none';
+        flashcardView.style.display = 'block';
+        feedbackContainer.style.display = 'none';
+        
+        flashcardView.classList.remove('flipped');
+        
+        const question = state.activeQuestions[state.currentIndex];
+        document.getElementById('flashcard-question-text').textContent = question.question;
+        document.getElementById('flashcard-concept').textContent = question.concept || 'No concept explanation provided.';
+        document.getElementById('flashcard-trick').textContent = question.memory_trick || 'No mnemonic trick provided.';
+        
+        submitBtn.style.display = 'none';
+        nextBtn.style.display = 'none';
+        
+        fcActions.style.display = 'flex';
+        
+        fcCorrectBtn.disabled = true;
+        fcIncorrectBtn.disabled = true;
+        fcCorrectBtn.style.opacity = '0.5';
+        fcIncorrectBtn.style.opacity = '0.5';
+    }
+}
+
+// Flip card handler
+flashcardView.addEventListener('click', () => {
+    if (activeMode !== 'flashcard') return;
+    flashcardView.classList.toggle('flipped');
+    
+    const isFlipped = flashcardView.classList.contains('flipped');
+    if (isFlipped) {
+        fcCorrectBtn.disabled = false;
+        fcIncorrectBtn.disabled = false;
+        fcCorrectBtn.style.opacity = '1';
+        fcIncorrectBtn.style.opacity = '1';
+    }
+});
+
+fcCorrectBtn.addEventListener('click', () => handleFlashcardGrade(true));
+fcIncorrectBtn.addEventListener('click', () => handleFlashcardGrade(false));
+
+function handleFlashcardGrade(isCorrect) {
     const question = state.activeQuestions[state.currentIndex];
     
-    // Set Header Metadata
+    state.results.push({
+        isCorrect: isCorrect,
+        difficulty: question.difficulty || 'Medium'
+    });
+    
+    if (!isCorrect) {
+        state.incorrectQuestions.push(question);
+    }
+    
+    saveSession();
+    
+    state.currentIndex++;
+    if (state.currentIndex < state.activeQuestions.length) {
+        if (activeMode === 'mcq') {
+            renderQuestion();
+        } else {
+            setStudyMode('flashcard');
+            progressLabel.textContent = `Question ${state.currentIndex + 1} of ${state.activeQuestions.length}`;
+            const diff = (state.activeQuestions[state.currentIndex].difficulty || 'Medium').trim();
+            difficultyBadge.textContent = diff;
+            difficultyBadge.className = `difficulty-badge difficulty-${diff.toLowerCase()}`;
+            const pct = (state.currentIndex / state.activeQuestions.length) * 100;
+            progressBar.style.width = `${pct}%`;
+        }
+    } else {
+        completeRound();
+    }
+}
+
+// --- TEXT TO SPEECH (TTS) INTEGRATION ---
+let currentUtterance = null;
+
+function speakText(text) {
+    if (!window.speechSynthesis) return;
+    
+    if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        document.querySelectorAll('.tts-btn').forEach(b => b.classList.remove('speaking'));
+        if (currentUtterance && currentUtterance.text === text) {
+            currentUtterance = null;
+            return;
+        }
+    }
+    
+    if (!text) return;
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    currentUtterance = utterance;
+    
+    if (state.uiConfig && state.uiConfig.detected_language) {
+        utterance.lang = state.uiConfig.detected_language;
+    } else {
+        utterance.lang = document.documentElement.lang || 'en-US';
+    }
+    
+    const voices = window.speechSynthesis.getVoices();
+    const matchingVoice = voices.find(v => v.lang.toLowerCase().startsWith(utterance.lang.toLowerCase()));
+    if (matchingVoice) {
+        utterance.voice = matchingVoice;
+    }
+    
+    utterance.onend = () => {
+        document.querySelectorAll('.tts-btn').forEach(b => b.classList.remove('speaking'));
+        currentUtterance = null;
+    };
+    
+    utterance.onerror = () => {
+        document.querySelectorAll('.tts-btn').forEach(b => b.classList.remove('speaking'));
+        currentUtterance = null;
+    };
+    
+    window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeech() {
+    if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+    }
+    document.querySelectorAll('.tts-btn').forEach(b => b.classList.remove('speaking'));
+    currentUtterance = null;
+}
+
+// Speak button listeners
+document.getElementById('speak-question-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const question = state.activeQuestions[state.currentIndex];
+    if (!question) return;
+    
+    const btn = document.getElementById('speak-question-btn');
+    const isSpeaking = btn.classList.contains('speaking');
+    stopSpeech();
+    
+    if (!isSpeaking) {
+        btn.classList.add('speaking');
+        speakText(question.question);
+    }
+});
+
+document.getElementById('speak-concept-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const question = state.activeQuestions[state.currentIndex];
+    if (!question) return;
+    
+    const btn = document.getElementById('speak-concept-btn');
+    const isSpeaking = btn.classList.contains('speaking');
+    stopSpeech();
+    
+    if (!isSpeaking) {
+        btn.classList.add('speaking');
+        speakText(question.concept || 'Concept explanation not provided.');
+    }
+});
+
+document.getElementById('speak-trick-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const question = state.activeQuestions[state.currentIndex];
+    if (!question) return;
+    
+    const btn = document.getElementById('speak-trick-btn');
+    const isSpeaking = btn.classList.contains('speaking');
+    stopSpeech();
+    
+    if (!isSpeaking) {
+        btn.classList.add('speaking');
+        speakText(question.memory_trick || 'Memory trick not provided.');
+    }
+});
+
+// --- RENDER QUESTION ---
+function renderQuestion() {
+    stopSpeech();
+    const question = state.activeQuestions[state.currentIndex];
+    
     progressLabel.textContent = `Question ${state.currentIndex + 1} of ${state.activeQuestions.length}`;
     
-    // Style difficulty badge
     const diff = (question.difficulty || 'Medium').trim();
     difficultyBadge.textContent = diff;
     difficultyBadge.className = `difficulty-badge difficulty-${diff.toLowerCase()}`;
     
-    // Update progress bar percentage
     const pct = (state.currentIndex / state.activeQuestions.length) * 100;
     progressBar.style.width = `${pct}%`;
     
-    // Set Question text
     questionText.textContent = question.question;
     
-    // Setup Custom UI configuration labels
     submitBtn.textContent = state.uiConfig.submit_btn || 'Submit Answer';
     nextBtn.textContent = state.uiConfig.next_btn || 'Next Question';
     
-    // Clear Options grid and build dynamic radio card widgets
     optionsGrid.innerHTML = '';
     state.selectedOption = null;
     submitBtn.disabled = true;
     
     question.options.forEach(option => {
-        // Extract letter identifier (e.g. 'A' from 'A. Option text')
         const letter = option.trim().charAt(0).toUpperCase();
         
         const card = document.createElement('div');
@@ -556,14 +828,10 @@ function renderQuestion() {
             <div class="option-text">${option}</div>
         `;
         
-        // Add click listener to choose option
         card.addEventListener('click', () => {
             if (card.classList.contains('disabled')) return;
             
-            // Deselect other cards
             document.querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
-            
-            // Select current card
             card.classList.add('selected');
             state.selectedOption = letter;
             submitBtn.disabled = false;
@@ -572,11 +840,7 @@ function renderQuestion() {
         optionsGrid.appendChild(card);
     });
     
-    // Reset view buttons & feedback panel
-    feedbackContainer.style.display = 'none';
-    submitBtn.style.display = 'block';
-    submitBtn.disabled = true;
-    nextBtn.style.display = 'none';
+    setStudyMode(activeMode);
 }
 
 submitBtn.addEventListener('click', () => {
@@ -586,32 +850,28 @@ submitBtn.addEventListener('click', () => {
     const correctLetter = question.correct_answer.trim().toUpperCase();
     const isCorrect = (state.selectedOption === correctLetter);
     
-    // Save results for stats
     state.results.push({
         isCorrect: isCorrect,
         difficulty: question.difficulty || 'Medium'
     });
     
-    // If incorrect, add to retry list
     if (!isCorrect) {
         state.incorrectQuestions.push(question);
     }
     
-    // Disable inputs
+    saveSession();
+    
     document.querySelectorAll('.option-card').forEach(card => {
         card.classList.add('disabled');
         const letter = card.dataset.letter;
         
-        // Visual indicator on choices
         if (letter === correctLetter) {
-            // Right answer gets styled with success green borders
             card.style.borderColor = 'var(--success)';
             card.style.background = 'var(--success-glow)';
             card.querySelector('.option-marker').style.background = 'var(--success)';
             card.querySelector('.option-marker').style.borderColor = 'var(--success)';
             card.querySelector('.option-marker').style.color = 'white';
         } else if (letter === state.selectedOption && !isCorrect) {
-            // Selected wrong answer gets styled with error red
             card.style.borderColor = 'var(--error)';
             card.style.background = 'var(--error-glow)';
             card.querySelector('.option-marker').style.background = 'var(--error)';
@@ -620,7 +880,6 @@ submitBtn.addEventListener('click', () => {
         }
     });
     
-    // Build instant explanation panel text
     if (isCorrect) {
         feedbackBanner.className = 'feedback-banner correct';
         feedbackIcon.textContent = '🟢';
@@ -628,8 +887,6 @@ submitBtn.addEventListener('click', () => {
     } else {
         feedbackBanner.className = 'feedback-banner incorrect';
         feedbackIcon.textContent = '🔴';
-        
-        // Find correct option string to display in explanation message
         const correctOptString = question.options.find(opt => opt.trim().toUpperCase().startsWith(correctLetter)) || correctLetter;
         feedbackMessage.textContent = `${state.uiConfig.msg_incorrect || 'INCORRECT. The correct answer was:'} ${correctOptString}`;
     }
@@ -637,7 +894,6 @@ submitBtn.addEventListener('click', () => {
     conceptText.textContent = question.concept || 'Concept explanation not provided.';
     memoryText.textContent = question.memory_trick || 'Memory trick not provided.';
     
-    // Swap main navigation buttons
     feedbackContainer.style.display = 'block';
     submitBtn.style.display = 'none';
     nextBtn.style.display = 'block';
@@ -645,6 +901,7 @@ submitBtn.addEventListener('click', () => {
 
 nextBtn.addEventListener('click', () => {
     state.currentIndex++;
+    saveSession();
     if (state.currentIndex < state.activeQuestions.length) {
         renderQuestion();
     } else {
@@ -660,41 +917,34 @@ const retryNoBtn = document.getElementById('retry-no-btn');
 const retryYesBtn = document.getElementById('retry-yes-btn');
 
 function completeRound() {
-    // Record baseline score on the very first round completion
+    stopSpeech();
     if (state.firstAttemptResults === null) {
         state.firstAttemptResults = [...state.results];
     }
     
-    // Check if there are wrongly answered questions to retry
     if (state.incorrectQuestions.length > 0) {
         const correct = state.results.filter(r => r.isCorrect).length;
         const total = state.results.length;
-        
-        // Use standard labels if translations not fetched yet
-        const textCorrect = state.uiConfig.msg_correct || 'correct';
-        const textIncorrect = state.uiConfig.msg_incorrect || 'incorrect';
         
         retryDialogMessage.innerHTML = `You answered <span style="color:var(--primary); font-weight:700;">${correct} out of ${total}</span> questions correctly.<br>You have <span style="color:var(--error); font-weight:700;">${state.incorrectQuestions.length}</span> incorrect answers remaining.`;
         
         showScreen('retryDialog');
     } else {
-        // Mastered all questions, proceed to final performance score
         finishQuiz();
     }
 }
 
-// Yes - Practice wrong ones
 retryYesBtn.addEventListener('click', () => {
     state.activeQuestions = [...state.incorrectQuestions];
     state.incorrectQuestions = [];
     state.currentIndex = 0;
     state.results = [];
     
+    saveSession();
     renderQuestion();
     showScreen('quiz');
 });
 
-// No - Skip retry, show stats
 retryNoBtn.addEventListener('click', () => {
     finishQuiz();
 });
@@ -715,18 +965,20 @@ const retakeBtn = document.getElementById('retake-btn');
 const restartBtn = document.getElementById('restart-btn');
 
 function finishQuiz() {
+    stopSpeech();
+    saveQuizToLibrary();
+    clearSession();
+
     const baselineTotal = state.firstAttemptResults.length;
     const baselineCorrect = state.firstAttemptResults.filter(r => r.isCorrect).length;
     const baselineAccuracy = baselineTotal > 0 ? (baselineCorrect / baselineTotal) * 100 : 0;
     
-    // Render Circular Progress Ring with first-attempt score (circumference: 440px)
     const strokeOffset = 440 - (440 * baselineAccuracy) / 100;
     scoreCircleProgress.style.strokeDashoffset = strokeOffset;
     
     scorePercentage.textContent = `${baselineAccuracy.toFixed(0)}%`;
     scoreRatio.textContent = `${baselineCorrect}/${baselineTotal}`;
     
-    // Subtitle progress description
     let subtitleHTML = `Initial Baseline Score: <strong>${baselineCorrect}/${baselineTotal}</strong>`;
     
     if (baselineCorrect < baselineTotal) {
@@ -741,7 +993,6 @@ function finishQuiz() {
     }
     resultsSubtitle.innerHTML = subtitleHTML;
     
-    // Compute stats by difficulty using BASELINE results for diagnostic accuracy
     const diffStats = {
         Easy: { correct: 0, total: 0 },
         Medium: { correct: 0, total: 0 },
@@ -749,7 +1000,6 @@ function finishQuiz() {
     };
     
     state.firstAttemptResults.forEach((r, idx) => {
-        // Safe mapping
         const q = state.allQuestions[idx] || {};
         const d = (q.difficulty || 'Medium').trim();
         const normalized = d.charAt(0).toUpperCase() + d.slice(1).toLowerCase();
@@ -760,7 +1010,6 @@ function finishQuiz() {
         }
     });
     
-    // Display stats helper
     const renderStat = (statObj) => {
         if (statObj.total === 0) return 'N/A';
         const pct = (statObj.correct / statObj.total) * 100;
@@ -773,7 +1022,6 @@ function finishQuiz() {
     
     showScreen('results');
     
-    // Run Celebration! (Confetti fires for good initial baseline score or total mastery completion)
     if (baselineAccuracy >= 60 || state.incorrectQuestions.length === 0) {
         startConfetti();
     }
@@ -783,20 +1031,175 @@ retakeBtn.addEventListener('click', () => {
     state.currentIndex = 0;
     state.results = [];
     state.incorrectQuestions = [];
-    state.firstAttemptResults = null; // Reset baseline
-    state.activeQuestions = [...state.allQuestions]; // Reload all
+    state.firstAttemptResults = null;
+    state.activeQuestions = [...state.allQuestions];
     
+    saveSession();
     renderQuestion();
     showScreen('quiz');
 });
 
 restartBtn.addEventListener('click', () => {
-    // Reset inputs, but keep API Key input intact
     notesInput.value = '';
     fileListContainer.innerHTML = '';
     state.attachedFiles = [];
+    clearSession();
     showScreen('setup');
 });
+
+// --- SESSION AUTO-SAVE & RESTORE CONTROLLERS ---
+function saveSession() {
+    try {
+        const sessionData = {
+            allQuestions: state.allQuestions,
+            sourceMetadata: state.sourceMetadata,
+            uiConfig: state.uiConfig,
+            activeQuestions: state.activeQuestions,
+            currentIndex: state.currentIndex,
+            results: state.results,
+            incorrectQuestions: state.incorrectQuestions,
+            firstAttemptResults: state.firstAttemptResults
+        };
+        localStorage.setItem('revision_coach_active_session', JSON.stringify(sessionData));
+    } catch (e) {
+        console.error('Failed to save session:', e);
+    }
+}
+
+function clearSession() {
+    localStorage.removeItem('revision_coach_active_session');
+}
+
+function checkAndRestoreSession() {
+    const rawSession = localStorage.getItem('revision_coach_active_session');
+    if (!rawSession) return;
+    
+    try {
+        const sessionData = JSON.parse(rawSession);
+        if (!sessionData.allQuestions || sessionData.allQuestions.length === 0) return;
+        
+        const resumeDialog = document.getElementById('resume-dialog');
+        if (resumeDialog) {
+            resumeDialog.classList.add('active');
+            
+            const confirmBtn = document.getElementById('resume-confirm-btn');
+            const discardBtn = document.getElementById('resume-discard-btn');
+            
+            confirmBtn.onclick = () => {
+                resumeDialog.classList.remove('active');
+                
+                state.allQuestions = sessionData.allQuestions;
+                state.sourceMetadata = sessionData.sourceMetadata;
+                state.uiConfig = sessionData.uiConfig;
+                state.activeQuestions = sessionData.activeQuestions;
+                state.currentIndex = sessionData.currentIndex;
+                state.results = sessionData.results;
+                state.incorrectQuestions = sessionData.incorrectQuestions;
+                state.firstAttemptResults = sessionData.firstAttemptResults;
+                
+                if (state.results.length > state.currentIndex) {
+                    state.results.pop();
+                    if (state.incorrectQuestions.length > 0) {
+                        state.incorrectQuestions.pop();
+                    }
+                }
+                
+                renderQuestion();
+                showScreen('quiz');
+            };
+            
+            discardBtn.onclick = () => {
+                resumeDialog.classList.remove('active');
+                clearSession();
+            };
+        }
+    } catch (e) {
+        console.error('Error parsing session data:', e);
+        clearSession();
+    }
+}
+
+// --- QUIZ ARCHIVE LIBRARY STORAGE ---
+function saveQuizToLibrary() {
+    if (!state.firstAttemptResults || state.firstAttemptResults.length === 0) return;
+    
+    const baselineTotal = state.firstAttemptResults.length;
+    const baselineCorrect = state.firstAttemptResults.filter(r => r.isCorrect).length;
+    const baselineAccuracy = baselineTotal > 0 ? Math.round((baselineCorrect / baselineTotal) * 100) : 0;
+    
+    let title = state.sourceMetadata.type || 'Pasted Notes';
+    if (state.attachedFiles && state.attachedFiles.length > 0) {
+        title = state.attachedFiles.map(f => f.name).join(', ');
+    }
+    
+    const quizEntry = {
+        id: 'quiz_' + Date.now(),
+        date: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        title: title,
+        score: `${baselineCorrect}/${baselineTotal}`,
+        percentage: baselineAccuracy,
+        allQuestions: state.allQuestions,
+        sourceMetadata: state.sourceMetadata,
+        uiConfig: state.uiConfig
+    };
+    
+    try {
+        let library = JSON.parse(localStorage.getItem('revision_coach_library') || '[]');
+        library.unshift(quizEntry);
+        if (library.length > 20) {
+            library = library.slice(0, 20);
+        }
+        localStorage.setItem('revision_coach_library', JSON.stringify(library));
+        renderLibraryList();
+    } catch (e) {
+        console.error('Failed to save to library:', e);
+    }
+}
+
+function renderLibraryList() {
+    const libraryGrid = document.getElementById('library-grid');
+    if (!libraryGrid) return;
+    
+    let library = [];
+    try {
+        library = JSON.parse(localStorage.getItem('revision_coach_library') || '[]');
+    } catch (e) {
+        console.error(e);
+    }
+    
+    if (library.length === 0) {
+        libraryGrid.innerHTML = `<div class="library-empty">No saved quizzes yet. Complete a quiz to archive it here!</div>`;
+        return;
+    }
+    
+    libraryGrid.innerHTML = '';
+    library.forEach(entry => {
+        const card = document.createElement('div');
+        card.className = 'library-card';
+        card.dataset.id = entry.id;
+        
+        card.innerHTML = `
+            <div class="library-card-title" title="${entry.title}">${entry.title}</div>
+            <div class="library-card-meta">
+                <span>📅 ${entry.date}</span>
+                <span style="font-weight:700; color: ${entry.percentage >= 80 ? 'var(--success)' : entry.percentage >= 50 ? 'var(--warning)' : 'var(--error)'}">
+                    Score: ${entry.score} (${entry.percentage}%)
+                </span>
+            </div>
+        `;
+        
+        card.addEventListener('click', () => {
+            state.allQuestions = entry.allQuestions;
+            state.sourceMetadata = entry.sourceMetadata;
+            state.uiConfig = entry.uiConfig;
+            
+            renderSummaryScreen();
+            showScreen('summary');
+        });
+        
+        libraryGrid.appendChild(card);
+    });
+}
 
 // ==========================================
 // 12. CELEBRATION EFFECTS (Confetti Canvas)
@@ -882,3 +1285,5 @@ function startConfetti() {
 // ==========================================
 initTheme();
 initApiKey();
+checkAndRestoreSession();
+renderLibraryList();

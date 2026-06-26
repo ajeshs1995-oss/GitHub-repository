@@ -109,11 +109,22 @@
                 </svg>
                 <span>Generate Quiz</span>
             </button>
+
+            <!-- Quiz Archive Library Panel -->
+            <section class="library-section">
+                <div class="library-header">
+                    <span>📚</span>
+                    <span>Saved Quizzes Library</span>
+                </div>
+                <div id="library-grid" class="library-grid">
+                    <!-- Library cards populated in script.js -->
+                </div>
+            </section>
         </main>
 
-        <!-- 2. LOADING SCREEN -->
+        <!-- 2. LOADING SCREEN WITH DYNAMIC SKELETON -->
         <section id="loading-screen" class="screen">
-            <div class="loading-wrapper">
+            <div class="loading-wrapper" style="padding-bottom: 10px;">
                 <div class="loading-pulse-ring">
                     <div class="loading-circle"></div>
                     <svg class="loading-icon" stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" height="32" width="32" xmlns="http://www.w3.org/2000/svg">
@@ -122,6 +133,24 @@
                 </div>
                 <div id="loading-text" class="loading-text">Analyzing Study Notes</div>
                 <div id="loading-subtext" class="loading-subtext">Gemini is structuring your revision checkpoint...</div>
+            </div>
+
+            <!-- Content-Aware Skeleton Loader -->
+            <div class="skeleton-container">
+                <div class="skeleton-grid">
+                    <div class="skeleton-card">
+                        <div class="skeleton-line title"></div>
+                        <div class="skeleton-line body-1"></div>
+                        <div class="skeleton-line body-2"></div>
+                        <div class="skeleton-line body-3"></div>
+                    </div>
+                    <div class="skeleton-card">
+                        <div class="skeleton-line title"></div>
+                        <div class="skeleton-line body-1"></div>
+                        <div class="skeleton-line body-2"></div>
+                        <div class="skeleton-line body-3"></div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -194,7 +223,7 @@
             </button>
         </section>
 
-        <!-- 4. QUIZ SCREEN -->
+        <!-- 4. QUIZ PRACTICE SCREEN -->
         <section id="quiz-screen" class="screen">
             <!-- Header bar for metadata -->
             <div class="quiz-header">
@@ -207,14 +236,50 @@
                 <div id="progress-bar" class="progress-bar"></div>
             </div>
 
-            <!-- Question text -->
-            <div class="question-container">
-                <h3 id="question-text" class="question-text">Loading question text...</h3>
+            <!-- Study Mode Switcher Toggle Group -->
+            <div class="mode-toggle-group">
+                <button id="mode-mcq" class="mode-btn active">
+                    <span>📝</span> Multiple Choice
+                </button>
+                <button id="mode-flashcard" class="mode-btn">
+                    <span>🔄</span> Flashcards Mode
+                </button>
             </div>
 
-            <!-- Radio choices -->
+            <!-- Question text (with Speech trigger next to it) -->
+            <div class="question-container">
+                <h3 id="question-text" class="question-text">Loading question text...</h3>
+                <button id="speak-question-btn" class="tts-btn" title="Read question out loud" aria-label="Read question out loud">
+                    <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" height="18" width="18" xmlns="http://www.w3.org/2000/svg">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- MCQ Mode Radio options -->
             <div id="options-grid" class="options-grid">
                 <!-- Dynamically populated in JavaScript -->
+            </div>
+
+            <!-- 3D Flashcard Mode View (Hidden by default) -->
+            <div id="flashcard-view" class="flashcard-view" style="display:none;">
+                <div class="flashcard-inner">
+                    <!-- Front face (Question) -->
+                    <div class="flashcard-face flashcard-front">
+                        <div id="flashcard-question-text" class="flashcard-question">Tap to reveal concepts...</div>
+                        <span class="flashcard-hint-text">Click to Flip Card</span>
+                    </div>
+                    <!-- Back face (Answer & trick) -->
+                    <div class="flashcard-face flashcard-back">
+                        <div class="flashcard-back-title">Key Concept</div>
+                        <div id="flashcard-concept" class="flashcard-back-text"></div>
+                        
+                        <div class="flashcard-back-title">Memory Trick</div>
+                        <div id="flashcard-trick" class="flashcard-back-text"></div>
+                        <span class="flashcard-hint-text">Click to Flip Back</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Explanation Feedback panels (Hidden until Answer is checked) -->
@@ -228,8 +293,16 @@
                     <!-- Concept summary card -->
                     <div class="info-card">
                         <div class="info-card-icon">💡</div>
-                        <div>
-                            <div class="info-card-title">Key Concept</div>
+                        <div style="flex-grow: 1;">
+                            <div class="info-card-title">
+                                <span>Key Concept</span>
+                                <button id="speak-concept-btn" class="tts-btn" title="Read concept" aria-label="Read concept">
+                                    <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" height="14" width="14" xmlns="http://www.w3.org/2000/svg">
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                    </svg>
+                                </button>
+                            </div>
                             <div id="concept-text" class="info-card-text">This explains the underlying concept.</div>
                         </div>
                     </div>
@@ -237,8 +310,16 @@
                     <!-- Mnemonic memory hack card -->
                     <div class="info-card trick">
                         <div class="info-card-icon">🧠</div>
-                        <div>
-                            <div class="info-card-title">Memory Trick</div>
+                        <div style="flex-grow: 1;">
+                            <div class="info-card-title">
+                                <span>Memory Trick</span>
+                                <button id="speak-trick-btn" class="tts-btn" title="Read trick" aria-label="Read trick">
+                                    <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" height="14" width="14" xmlns="http://www.w3.org/2000/svg">
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                    </svg>
+                                </button>
+                            </div>
                             <div id="memory-text" class="info-card-text">This helps you remember easily.</div>
                         </div>
                     </div>
@@ -295,7 +376,7 @@
                     </div>
                 </div>
 
-                <!-- Score breakdown subtitles (especially useful for retries) -->
+                <!-- Score breakdown subtitles -->
                 <p id="results-subtitle" style="font-size: 14px; color: var(--text-muted); margin-bottom: 24px; font-weight: 500;"></p>
 
                 <!-- Performance Grid Stats -->
@@ -332,6 +413,18 @@
                 </div>
             </div>
         </section>
+    </div>
+
+    <!-- Session Restore Confirmation Overlay Modal Dialog -->
+    <div id="resume-dialog" class="dialog-overlay">
+        <div class="dialog-box">
+            <div class="dialog-title">Resume Practice?</div>
+            <div class="dialog-message">We found an unfinished practice checkpoint. Would you like to resume your study session where you left off, or start fresh?</div>
+            <div class="dialog-actions">
+                <button id="resume-discard-btn" class="btn-secondary">Start Fresh</button>
+                <button id="resume-confirm-btn" class="btn-primary">Resume Session</button>
+            </div>
+        </div>
     </div>
 
     <!-- Canvas layer for Confetti animation -->
