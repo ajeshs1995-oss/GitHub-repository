@@ -30,35 +30,181 @@ const screens = {
 };
 
 // ==========================================
-// 2. THEME CONTROLLER (Light/Dark Mode)
+// 2. AUDIO CHIMES, HAPTICS, & THEME CONTROLLER
 // ==========================================
-const themeToggleBtn = document.getElementById('theme-toggle');
-const darkIcon = document.getElementById('theme-icon-dark');
-const lightIcon = document.getElementById('theme-icon-light');
+const themeSelector = document.getElementById('theme-selector');
+const soundToggleBtn = document.getElementById('sound-toggle');
+const soundIconOn = document.getElementById('sound-icon-on');
+const soundIconOff = document.getElementById('sound-icon-off');
 
 function initTheme() {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
-    updateThemeIcons(savedTheme);
-}
-
-function updateThemeIcons(theme) {
-    if (theme === 'dark') {
-        darkIcon.style.display = 'block';
-        lightIcon.style.display = 'none';
-    } else {
-        darkIcon.style.display = 'none';
-        lightIcon.style.display = 'block';
+    if (themeSelector) {
+        themeSelector.value = savedTheme;
     }
 }
 
-themeToggleBtn.addEventListener('click', () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-    updateThemeIcons(newTheme);
+if (themeSelector) {
+    themeSelector.addEventListener('change', (e) => {
+        const newTheme = e.target.value;
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+    });
+}
+
+function initSoundSetting() {
+    state.isMuted = localStorage.getItem('revision_coach_muted') === 'true';
+    updateSoundIcons();
+}
+
+function updateSoundIcons() {
+    if (state.isMuted) {
+        soundIconOn.style.display = 'none';
+        soundIconOff.style.display = 'block';
+    } else {
+        soundIconOn.style.display = 'block';
+        soundIconOff.style.display = 'none';
+    }
+}
+
+soundToggleBtn.addEventListener('click', () => {
+    state.isMuted = !state.isMuted;
+    localStorage.setItem('revision_coach_muted', state.isMuted);
+    updateSoundIcons();
 });
+
+// Offline Sound Synthesizer using Web Audio API
+function playChime(isCorrect) {
+    if (state.isMuted) return;
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        
+        if (isCorrect) {
+            const now = ctx.currentTime;
+            const freqs = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+            freqs.forEach((freq, idx) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                
+                gain.gain.setValueAtTime(0, now + idx * 0.08);
+                gain.gain.linearRampToValueAtTime(0.15, now + idx * 0.08 + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.08 + 0.3);
+                
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                osc.start(now + idx * 0.08);
+                osc.stop(now + idx * 0.08 + 0.3);
+            });
+        } else {
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(180, now);
+            osc.frequency.linearRampToValueAtTime(110, now + 0.35);
+            
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+            
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(400, now);
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.start(now);
+            osc.stop(now + 0.35);
+        }
+    } catch (e) {
+        console.error('Audio synthesis failed:', e);
+    }
+}
+
+// Native Device Vibrate haptic buzzes
+function triggerHaptic(isCorrect) {
+    if (window.navigator && window.navigator.vibrate) {
+        if (isCorrect) {
+            window.navigator.vibrate(50);
+        } else {
+            window.navigator.vibrate([60, 50, 60]);
+        }
+    }
+}
+
+// Streaks Logging & weekly checker grid
+function logActivity() {
+    const todayStr = new Date().toDateString();
+    let streaks = JSON.parse(localStorage.getItem('revision_coach_streaks') || '{"count": 0, "lastDate": "", "history": []}');
+    
+    if (streaks.history.includes(todayStr)) {
+        renderStreaks();
+        return;
+    }
+    
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toDateString();
+    
+    if (streaks.lastDate === yesterdayStr) {
+        streaks.count++;
+    } else if (streaks.lastDate !== todayStr) {
+        streaks.count = 1;
+    }
+    
+    streaks.lastDate = todayStr;
+    streaks.history.push(todayStr);
+    
+    localStorage.setItem('revision_coach_streaks', JSON.stringify(streaks));
+    renderStreaks();
+}
+
+function renderStreaks() {
+    const streakCountEl = document.getElementById('streak-count');
+    if (!streakCountEl) return;
+    
+    const streaks = JSON.parse(localStorage.getItem('revision_coach_streaks') || '{"count": 0, "lastDate": "", "history": []}');
+    
+    let count = streaks.count;
+    if (streaks.lastDate) {
+        const lastDateObj = new Date(streaks.lastDate);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        lastDateObj.setHours(0,0,0,0);
+        const diffTime = Math.abs(today - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays > 1 && streaks.lastDate !== new Date().toDateString()) {
+            count = 0;
+        }
+    }
+    
+    streakCountEl.textContent = `${count} ${count === 1 ? 'day' : 'days'}`;
+    
+    const today = new Date();
+    const currentDayOfWeek = today.getDay();
+    
+    for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(today.getDate() - (currentDayOfWeek - i));
+        const dateStr = d.toDateString();
+        const el = document.querySelector(`.streak-day[data-day="${i}"]`);
+        if (el) {
+            if (streaks.history.includes(dateStr)) {
+                el.classList.add('completed');
+            } else {
+                el.classList.remove('completed');
+            }
+        }
+    }
+}
 
 // ==========================================
 // 3. STORAGE & KEY RETRIEVAL
@@ -243,6 +389,42 @@ function readOriginalFile(file, isText, type, itemIcon) {
     }
 }
 
+function openFilePreview(file) {
+    const modal = document.getElementById('preview-modal');
+    const previewTitle = document.getElementById('preview-title');
+    const previewBody = document.getElementById('preview-body');
+    if (!modal || !previewTitle || !previewBody) return;
+    
+    previewTitle.textContent = `Preview: ${file.name}`;
+    previewBody.innerHTML = '';
+    
+    if (file.type === 'text') {
+        const textarea = document.createElement('pre');
+        textarea.className = 'preview-text-content';
+        textarea.textContent = file.textContent;
+        previewBody.appendChild(textarea);
+    } else if (file.type.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.className = 'preview-image-content';
+        img.src = `data:${file.type};base64,${file.base64Data}`;
+        img.alt = file.name;
+        previewBody.appendChild(img);
+    } else if (file.type === 'application/pdf') {
+        previewBody.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 14px; padding: 20px;">
+            📕 PDF Document attached.<br><br>
+            PDF content parsing and revision questions are processed directly offline in your Revision Coach app!
+        </div>`;
+    }
+    
+    modal.classList.add('active');
+}
+
+if (document.getElementById('close-preview-btn')) {
+    document.getElementById('close-preview-btn').addEventListener('click', () => {
+        document.getElementById('preview-modal').classList.remove('active');
+    });
+}
+
 async function handleFilesSelection(files) {
     if (!files || files.length === 0) return;
     hideStatus();
@@ -303,7 +485,7 @@ function renderFilesList() {
             <div class="file-info">
                 <span class="file-icon">${file.icon}</span>
                 <div class="file-details">
-                    <span class="file-name" title="${file.name}">${file.name}</span>
+                    <span class="file-name preview-trigger-link" title="Click to preview file">${file.name}</span>
                     <span class="file-size">${formatBytes(file.size)}</span>
                 </div>
             </div>
@@ -316,6 +498,12 @@ function renderFilesList() {
                 </svg>
             </button>
         `;
+        
+        // Preview item on name click
+        item.querySelector('.preview-trigger-link').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openFilePreview(file);
+        });
         
         // Remove item from state and UI list
         item.querySelector('.file-remove-btn').addEventListener('click', (e) => {
@@ -675,6 +863,8 @@ function handleFlashcardGrade(isCorrect) {
     }
     
     saveSession();
+    playChime(isCorrect);
+    triggerHaptic(isCorrect);
     
     state.currentIndex++;
     if (state.currentIndex < state.activeQuestions.length) {
@@ -860,6 +1050,8 @@ submitBtn.addEventListener('click', () => {
     }
     
     saveSession();
+    playChime(isCorrect);
+    triggerHaptic(isCorrect);
     
     document.querySelectorAll('.option-card').forEach(card => {
         card.classList.add('disabled');
@@ -964,10 +1156,64 @@ const statHard = document.getElementById('stat-hard');
 const retakeBtn = document.getElementById('retake-btn');
 const restartBtn = document.getElementById('restart-btn');
 
+function renderTopicCharts() {
+    const chartsContainer = document.getElementById('results-charts-container');
+    const chartsGrid = document.getElementById('charts-grid');
+    if (!chartsContainer || !chartsGrid) return;
+    
+    const topicStats = {};
+    state.firstAttemptResults.forEach((r, idx) => {
+        const q = state.allQuestions[idx] || {};
+        const topic = q.topic || 'General Practice';
+        if (!topicStats[topic]) {
+            topicStats[topic] = { correct: 0, total: 0 };
+        }
+        topicStats[topic].total++;
+        if (r.isCorrect) {
+            topicStats[topic].correct++;
+        }
+    });
+    
+    const topicsArray = Object.keys(topicStats);
+    if (topicsArray.length === 0) {
+        chartsContainer.style.display = 'none';
+        return;
+    }
+    
+    chartsContainer.style.display = 'block';
+    chartsGrid.innerHTML = '';
+    
+    topicsArray.forEach(topic => {
+        const stats = topicStats[topic];
+        const accuracy = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+        
+        const chartItem = document.createElement('div');
+        chartItem.className = 'chart-item';
+        chartItem.innerHTML = `
+            <div class="chart-header">
+                <span class="chart-title" title="${topic}">${topic}</span>
+                <span class="chart-ratio">${stats.correct}/${stats.total} (${accuracy}%)</span>
+            </div>
+            <div class="chart-bar-container">
+                <div class="chart-bar-fill" id="chart-fill-${encodeURIComponent(topic)}" style="width: 0%"></div>
+            </div>
+        `;
+        chartsGrid.appendChild(chartItem);
+        
+        setTimeout(() => {
+            const fill = document.getElementById(`chart-fill-${encodeURIComponent(topic)}`);
+            if (fill) {
+                fill.style.width = `${accuracy}%`;
+            }
+        }, 100);
+    });
+}
+
 function finishQuiz() {
     stopSpeech();
     saveQuizToLibrary();
     clearSession();
+    logActivity();
 
     const baselineTotal = state.firstAttemptResults.length;
     const baselineCorrect = state.firstAttemptResults.filter(r => r.isCorrect).length;
@@ -1020,6 +1266,7 @@ function finishQuiz() {
     statMedium.textContent = renderStat(diffStats.Medium);
     statHard.textContent = renderStat(diffStats.Hard);
     
+    renderTopicCharts();
     showScreen('results');
     
     if (baselineAccuracy >= 60 || state.incorrectQuestions.length === 0) {
@@ -1178,10 +1425,20 @@ function renderLibraryList() {
         card.className = 'library-card';
         card.dataset.id = entry.id;
         
+        let tagHTML = '';
+        if (entry.percentage >= 80) {
+            tagHTML = `<span class="library-tag mastered">Mastered</span>`;
+        } else if (entry.percentage >= 50) {
+            tagHTML = `<span class="library-tag review-due">Review Due</span>`;
+        } else {
+            tagHTML = `<span class="library-tag needs-work">Needs Work</span>`;
+        }
+
         card.innerHTML = `
             <div class="library-card-title" title="${entry.title}">${entry.title}</div>
             <div class="library-card-meta">
                 <span>📅 ${entry.date}</span>
+                ${tagHTML}
                 <span style="font-weight:700; color: ${entry.percentage >= 80 ? 'var(--success)' : entry.percentage >= 50 ? 'var(--warning)' : 'var(--error)'}">
                     Score: ${entry.score} (${entry.percentage}%)
                 </span>
@@ -1285,5 +1542,7 @@ function startConfetti() {
 // ==========================================
 initTheme();
 initApiKey();
+initSoundSetting();
 checkAndRestoreSession();
 renderLibraryList();
+renderStreaks();
